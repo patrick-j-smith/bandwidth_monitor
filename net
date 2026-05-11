@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# Visualize network bandwidth on a host
+
+
+fatal() {
+	echo '[FATAL]' "@" >&2
+	exit 1
+}
+
+mapfile -s 2 -t  lines < /proc/net/dev || fatal 'failed to read proc device'
+
+decalre -A DATA=()
+
+for line in "${lines[@]}"; do 
+	
+	read -ra info <<< "$line"
+
+	iface=${info[0]%:}
+	rx_bytes=${info[1]%:}
+	tx_bytes=${info[9]%:}
+
+	echo "$iface - $rx_bytes $tx_bytes"
+
+done
+
