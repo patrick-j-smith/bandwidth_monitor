@@ -3,37 +3,67 @@
 # Visualize network bandwidth on a host
 
 declare -A DATA=()
+PRINTFMT='%10s %10s %10s %10s\n'
 
 fatal() {
 	echo '[FATAL]' "@" >&2
 	exit 1
 }
 
-mapfile -s 2 -t  lines < /proc/net/dev || fatal 'failed to read proc device'
+process-iface() {
+	local iface=$1
+	local rx_bytes=$2		
+	local tx_bytes=$3
 
-while true; do
-	for line in "${lines[@]}"; do 
+	local old=${DATA[$iface]}
+
+	DATA[$iface]="$rx_bytes $tx_bytes"
+
+	if [[ -z $old ]]; then
+		echo "> $iface old data not found"
+		return 1
+	fi
+
+	local old_rx_bytes old_tx_bytes
+	read -r old_rx_bytes old_tx_bytes <<< "$old"
+
+	local d_rx_bits=$(((rx_bytes - old_rx_bytes) * 8))
+	local d_tx_bits=$(((tx_bytes - old_tx_bytes) * 8))
+	local d_total_bits=$(((d_rx_bytes + d_tx_bytes * 8)))
+	
+	local rx_bits="$d_rx_bits bps"
+	local tx_bits="$d_tx_bits bps"
+	local total_bits="$d_total_bits bps"
+
+	printf "$PRINTFMT" "$iface" "$rx_bits" "$tx_bits" "$total_bits"
+}
+
+main() {
+	while true; do
+
+		mapfile -s 2 -t  lines < /proc/net/dev || fatal 'failed to read proc device'
 		
-		read -ra info <<< "$line"
+		echo 
+		printf "$PRINTFMT" "INTERFACE" "RECEIVE" "TRANSMIT" "TOTAL"
 
-		iface=${info[0]%:}
-		rx_bytes=${info[1]%:}
-		tx_bytes=${info[9]%:}
 
-		old=${DATA[$iface]}
-		DATA[$iface]="$rx_bytes $tx_bytes"	
-		if [[ -z $old ]]; then
-			echo "> $iface old data not found"
-			continue
-		fi
+		local line
+		for line in "${lines[@]}"; do 
+			
+			local -a info
+			read -ra info <<< "$line"
 
-		read -r old_rx_bytes old_tx_bytes <<< "$old"
+			local iface=${info[0]%:}
+			local rx_bytes=${info[1]%:}
+			local tx_bytes=${info[9]%:}
 
-		d_rx_bytes=$((rx_bytes - old_rx_bytes))
-		d_tx_bytes=$((tx_bytes - old_tx_bytes))
-		d_total_bytes=$((d_rx_bytes + d_tx_bytes))
+			process-iface "$iface" "$rx_bytes" "$tx_bytes"
 
-		echo "$iface: $d_rx_bytes $d_tx_bytes $d_total_bytes"
+		done
+
+		sleep 1
+
 	done
-	sleep 1
-done
+}
+
+main "$0"
