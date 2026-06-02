@@ -3,11 +3,35 @@
 # Visualize network bandwidth on a host
 
 declare -A DATA=()
-PRINTFMT='%10s %10s %10s %10s\n'
+
+if [[ -z $NO_COLOR ]]; then
+	COLOR=$'\e[36m'
+	DIM=$'\e[2m'
+	RST=$'\e[0m'
+else
+	COLOR=
+	DIM=
+	RST=
+fi
+
+TITLEFMT="$DIM%15s %15s %15s %15s$RST\\n"
+DATAFMT="$COLOR%15s$RST %15s %15s %15s\\n"
 
 fatal() {
 	echo '[FATAL]' "@" >&2
 	exit 1
+}
+
+format-bits() {
+	local bits=$1
+
+	if ((bits > 1000000)); then
+		echo "$((bits / 1000000)) mbps"
+	elif ((bits > 1000)); then
+		echo "$((bits / 1000)) kbps"
+	else
+		echo "$bits  bps"
+	fi
 }
 
 process-iface() {
@@ -31,20 +55,34 @@ process-iface() {
 	local d_tx_bits=$(((tx_bytes - old_tx_bytes) * 8))
 	local d_total_bits=$(((d_rx_bytes + d_tx_bytes * 8)))
 	
-	local rx_bits="$d_rx_bits bps"
-	local tx_bits="$d_tx_bits bps"
-	local total_bits="$d_total_bits bps"
+	local rx=$(format-bits "$d_rx_bits")
+	local tx=$(format-bits "$d_tx_bits")
+	local total=$(format-bits "$d_total_bits")
+	
+	printf "$DATAFMT" "$iface" "$rx" "$tx" "$total"
+}
 
-	printf "$PRINTFMT" "$iface" "$rx_bits" "$tx_bits" "$total_bits"
+enable-alt-buffer() {
+	printf '\e[?1049h' # enable alternate buffer
+	printf '\e[?25l' # hide the cursor
+}
+
+disable-alt-buffer() {
+	printf '\e[?1049l' # disable alternate buffer
+	printf '\e[?25h' # show the cursor
 }
 
 main() {
-	while true; do
+	trap disable-alt-buffer EXIT
+	enable-alt-buffer
+
+	while true; do	
+		printf '\e[H' # move the cursor home
 
 		mapfile -s 2 -t  lines < /proc/net/dev || fatal 'failed to read proc device'
 		
 		echo 
-		printf "$PRINTFMT" "INTERFACE" "RECEIVE" "TRANSMIT" "TOTAL"
+		printf "$TITLEFMT" "INTERFACE" "RECEIVE" "TRANSMIT" "TOTAL"
 
 
 		local line
